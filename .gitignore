@@ -1,0 +1,10 @@
+# Estado de runtime do LivingWorld (gerado pelo servidor, nunca versionar)
+livingworld_*.txt
+
+# Build do ServUO
+*.dll
+*.exe
+*.pdb
+*.mdb
+obj/
+bin/
