@@ -12,7 +12,7 @@ injects narrative when it detects a crisis or a power imbalance in the world sta
 is lexical and runs locally.
 
 > ServUO is the emulator. This repository is only what was built **on top** of it.
-> LivingWorld is not a fork; it installs over a clean ServUO tree and touches four
+> LivingWorld is not a fork; it installs over a clean ServUO tree and touches six
 > core files (see [Installation](#installation)).
 
 ---
@@ -89,9 +89,17 @@ cp -r src/LivingWorld src/Addons/*.cs /path/to/servuo/Scripts/Custom/
 ServUO compiles `Scripts/` recursively — the folder layout does not affect the build,
 only your own organization.
 
-**2.** Apply the four core patches — see [`patches/README.md`](patches/README.md).
-Roughly 20 lines total: two feed the navigation mesh, two make NPC guild warfare
-lawful so town guards do not shut it down, and one is an optional gold sink.
+**2.** Apply the six core patches — see [`patches/README.md`](patches/README.md).
+
+Four of them reference LivingWorld types and are easy to spot. **Two do not mention
+LivingWorld at all**, and those are the ones that matter most:
+
+- `BaseCreature.cs` — `CurrentSpeed` returns 0 delay only when a player is watching.
+  Without it, ~2,200 off-screen NPCs run their AI at zero delay and the shard melts.
+- `BaseAI.cs` — navpoint following that continues an active A\* route instead of
+  restarting it. Without it, `CityLords` patrols snag on walls.
+
+Skipping either degrades the shard silently, with no error to point at.
 
 **3.** Build and boot. On first startup `LWManager` populates the world; run `[lw` to
 open the control panel.
