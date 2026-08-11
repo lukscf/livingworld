@@ -12,8 +12,8 @@ injects narrative when it detects a crisis or a power imbalance in the world sta
 is lexical and runs locally.
 
 > ServUO is the emulator. This repository is only what was built **on top** of it.
-> LivingWorld is not a fork; it installs over a clean ServUO tree and touches six
-> core files (see [Installation](#installation)).
+> LivingWorld is not a fork; it installs over a clean **ServUO 57.4** tree and
+> patches a handful of core files (see [Installation](#installation)).
 
 ---
 
@@ -78,7 +78,12 @@ Built on top of LivingWorld, each independent of the others:
 
 ## Installation
 
-Over a clean ServUO tree:
+Over a clean **ServUO 57.4** tree.
+
+**0.** Set `Config/Expansion.cfg` → `CurrentExpansion=UOR`. Stock ships `EJ` (Endless
+Journey); LivingWorld is written for T2A / pre-AOS, where skills, loot, creature
+stats, and faction rules all differ. Miss this and the world quietly behaves as
+something it was not designed for.
 
 **1.** Copy the contents of `src/` into `Scripts/Custom/`:
 
@@ -89,17 +94,22 @@ cp -r src/LivingWorld src/Addons/*.cs /path/to/servuo/Scripts/Custom/
 ServUO compiles `Scripts/` recursively — the folder layout does not affect the build,
 only your own organization.
 
-**2.** Apply the six core patches — see [`patches/README.md`](patches/README.md).
+**2.** Apply the core patches — see [`patches/README.md`](patches/README.md).
 
-Four of them reference LivingWorld types and are easy to spot. **Two do not mention
-LivingWorld at all**, and those are the ones that matter most:
+Four of them reference LivingWorld types and are easy to spot. The rest **never
+mention LivingWorld**, and those are the ones that matter most:
 
+- `Server/Mobile.cs` — make `AddItem` virtual. A build prerequisite: `BaseCreature`
+  overrides it. This one fails loudly.
 - `BaseCreature.cs` — `CurrentSpeed` returns 0 delay only when a player is watching.
   Without it, ~2,200 off-screen NPCs run their AI at zero delay and the shard melts.
 - `BaseAI.cs` — navpoint following that continues an active A\* route instead of
   restarting it. Without it, `CityLords` patrols snag on walls.
+- `Mining.cs` / `Lumberjacking.cs` — harvest lock granularity, which is what
+  `LWEconomy` hits when every miner in the world works at once.
 
-Skipping either degrades the shard silently, with no error to point at.
+Except for the build prerequisite, skipping any of these degrades the shard
+**silently** — no error, no log line.
 
 **3.** Build and boot. On first startup `LWManager` populates the world; run `[lw` to
 open the control panel.

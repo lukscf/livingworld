@@ -1,47 +1,62 @@
 # Core patches
 
-LivingWorld is a layer, not a fork — but it is not zero-touch either. It needs
-**six** files in the stock ServUO tree patched.
+LivingWorld is a layer, not a fork — but it is not zero-touch either.
 
-They fall into two groups, and the second group is the one that bites.
+## How this list was produced
 
-### Group A — patches that reference LivingWorld types
+Earlier versions of this document said "one core file", then "four", then "six". All
+three were wrong, and all three came from the same broken method: **grepping the tree
+for `LivingWorld`**. That only finds files that *name* LW types. It cannot see a
+`virtual` added to a signature, a `<Reference>` in an XML project file, an expansion
+changed in a `.cfg`, or a one-line lock change.
 
-Easy to find: grep the tree for `LivingWorld` and they show up.
+The correct method is a diff, and it is mechanical:
+
+1. `Server/AssemblyInfo.cs` pins the upstream tag — here, `AssemblyVersion("57.4")`.
+2. Fetch that exact tag and compare the whole tree, normalizing CRLF.
+3. Cross-check against the next tag to separate upstream drift from local edits.
+
+Result against **ServUO 57.4**: 6,737 files, **6,641 identical, 36 modified**, 60
+ours alone (the 59 in `Scripts/Custom/` plus `makefile`), 8 upstream files absent.
+
+If you are porting LivingWorld into your own shard, do the diff. Do not grep.
+
+---
+
+## Prerequisites
+
+**ServUO 57.4.** Other revisions may work, but every line number and block below was
+verified against 57.4.
+
+**`Config/Expansion.cfg` → `CurrentExpansion=UOR`.** Stock 57.4 ships `EJ` (Endless
+Journey). LivingWorld is written for T2A / pre-AOS: skills, loot tables, creature
+stats, and faction rules all differ under EJ. This single line is the difference
+between the world behaving as designed and quietly behaving as something else.
+
+**`Scripts/Scripts.csproj` → add `<Reference Include="System.Net.Http" />`.** Only
+needed if you install `shard/OptusNPC.cs`, which uses `HttpClient`. Without it the
+scripts assembly does not build.
+
+---
+
+## Group A — patches that reference LivingWorld types
+
+A grep for `LivingWorld` finds these four.
 
 | File | Lines | Why |
 |---|---|---|
 | `Scripts/Mobiles/PlayerMobile.cs` | 2 | Feeds the navigation mesh |
-| `Scripts/Misc/Notoriety.cs` | ~13 | Rival NPC guilds are enemies, not criminals |
+| `Scripts/Misc/Notoriety.cs` | 13 | Rival NPC guilds are enemies, not criminals |
 | `Scripts/Regions/GuardedRegion.cs` | 7 | Guards ignore NPC guild members |
-| `Scripts/VendorInfo/GenericSell.cs` | 2 | Vendor markup as a gold sink (optional) |
+| `Scripts/VendorInfo/GenericSell.cs` | 2 | Vendor markup gold sink *(optional)* |
 
-### Group B — core behavior LivingWorld assumes
-
-**These never mention LivingWorld.** They are ordinary-looking changes to stock
-ServUO behavior, so a grep for `LivingWorld` will not find them — but LivingWorld
-depends on both, and skipping them degrades the shard silently, with no error.
-
-| File | What | Skip it and… |
-|---|---|---|
-| `Scripts/Mobiles/Normal/BaseCreature.cs` | `CurrentSpeed` returns 0.0 only when a player is watching | **~2,200 NPCs run their AI with zero delay off-screen.** This is the CPU fix that makes the population viable at all. |
-| `Scripts/Mobiles/AI/BaseAI.cs` | Navpoint following: continue an active A* route, cheap 45°/90° sidestep, real A* only after 3 stuck ticks | `CityLords` patrols snag on walls — it drives `NavPoints`/`CurrentNavPoint` directly and relies on this. |
-
-`Server/Mobile.cs` shows no locally-authored markers, but this tree is a snapshot of
-a different ServUO revision than current master, so a diff against upstream is pure
-noise and I could not prove it clean. Treat "untouched" as unverified.
-
----
-
-## A1. `Scripts/Mobiles/PlayerMobile.cs` — navigation
-
-Add the `using` at the top of the file:
+### A1. `Scripts/Mobiles/PlayerMobile.cs` — navigation
 
 ```csharp
 using Server.Custom.LivingWorld;
 ```
 
-Then, in `OnLocationChange`, as the **first** statement:
+In `OnLocationChange`, as the **first** statement:
 
 ```csharp
 protected override void OnLocationChange(Point3D oldLocation)
@@ -51,18 +66,13 @@ protected override void OnLocationChange(Point3D oldLocation)
     ...
 ```
 
-**Why:** `LWPassiveNav` passively records where players actually walk inside city
-limits. That recording is the raw material for `LWLocalNav`, the last-mile navigation
-mesh NPCs use to move around towns.
+`LWPassiveNav` records where players actually walk inside city limits. That recording
+is the raw material for `LWLocalNav`, the mesh NPCs use to move around towns. Skip it
+and the mesh never learns anything new.
 
-Skip it and the rest still compiles and runs, but the in-town mesh never learns
-anything new — NPCs stay limited to whatever is already in
-`livingworld_recorded_paths.txt`, or to nothing at all on a fresh install.
+### A2. `Scripts/Misc/Notoriety.cs` — rival guilds are enemies
 
-## A2. `Scripts/Misc/Notoriety.cs` — rival guilds are enemies
-
-In `MobileNotoriety`, after the `target == null` guard and **before** the
-`if (Core.AOS)` block:
+In `MobileNotoriety`, after the `target == null` guard, before `if (Core.AOS)`:
 
 ```csharp
 // LivingWorld: rival NPC guilds are ENEMIES to each other (orange). This makes
@@ -80,13 +90,9 @@ In `MobileNotoriety`, after the `target == null` guard and **before** the
 }
 ```
 
-**Why:** flags rival guild members orange to each other so their fights are legal war.
-Note the pet resolution — a summon inherits its `ControlMaster`'s guild.
+Skip it and the rivalry in `LWGuild` becomes cosmetic.
 
-Skip it and rival guilds read as innocent to one another; the rivalry in `LWGuild`
-becomes cosmetic.
-
-## A3. `Scripts/Regions/GuardedRegion.cs` — guards stand down
+### A3. `Scripts/Regions/GuardedRegion.cs` — guards stand down
 
 In `IsGuardCandidate(Mobile m)`, after the existing early-out block:
 
@@ -100,45 +106,53 @@ if (m is BaseCreature pbc && pbc.ControlMaster is Server.Custom.LivingWorld.LWCi
     return false;
 ```
 
-**Why:** companion to A2. Even with the notoriety fix, an area spell splashing a
-bystander turns the caster gray and town guards execute them.
+Companion to A2 — without it, an area spell splashing a bystander gets the caster
+executed by town guards.
 
-## A4. `Scripts/VendorInfo/GenericSell.cs` — vendor markup *(optional)*
+### A4. `Scripts/VendorInfo/GenericSell.cs` — vendor markup *(optional)*
 
-Two edits — the constant **and** the `return` that uses it. Adding only the constant
-does nothing.
+Two edits: the constant **and** the `return` that uses it. The constant alone does
+nothing.
 
 ```csharp
-// LivingWorld: vendor markup = player-facing gold sink.
-// Affects ONLY players buying from the vendor gump; bots buy straight from
-// BuyPack and never pass through here.
-// Tune VendorMarkup to calibrate the drain (1.00 = no fee, 1.12 = +12%).
-public const double VendorMarkup = 1.12;
+public const double VendorMarkup = 1.12;   // 1.00 = no fee
 
 public int GetBuyPriceFor(Item item, BaseVendor vendor)
 {
-    return (int)(1.90 * VendorMarkup * GetSellPriceFor(item, vendor));   // <-- markup added here
+    return (int)(1.90 * VendorMarkup * GetSellPriceFor(item, vendor));   // <-- markup here
 }
 ```
 
-**Why:** an economy where NPCs continuously produce goods needs somewhere for gold to
-leave. Genuinely optional — skip it, or set `1.00`, and nothing else changes.
+Player-facing gold sink. Genuinely optional.
 
 ---
 
-## B1. `Scripts/Mobiles/Normal/BaseCreature.cs` — speed by visibility
+## Group B — core behavior LivingWorld assumes
 
-**The most important patch in this document.** Without it a populated shard melts.
+**None of these mention LivingWorld.** They look like ordinary ServUO changes, so no
+grep will surface them — and skipping them fails *silently*: no build error (except
+B0, which fails loudly), no log line, just a shard that behaves worse for reasons
+nothing points at.
 
-Add the field:
+### B0. `Server/Mobile.cs` — `AddItem` must be virtual *(build prerequisite)*
+
+```diff
+-public void AddItem(Item item)
++public virtual void AddItem(Item item)
+```
+
+Stock 57.4 declares it non-virtual. `BaseCreature.cs` (B1) declares
+`public override void AddItem`. **Apply B1 without this and the build fails** — you
+cannot override a non-virtual method. This one line is the reason the earlier
+"six files" list was not actually installable.
+
+### B1. `Scripts/Mobiles/Normal/BaseCreature.cs` — speed by visibility
+
+**The most important patch here.** Without it a populated shard melts.
 
 ```csharp
 private bool m_LastWatchedByPlayer; // detects the visible/not-visible transition
-```
 
-Then replace the `CurrentSpeed` getter:
-
-```csharp
 [CommandProperty(AccessLevel.GameMaster)]
 public double CurrentSpeed
 {
@@ -149,11 +163,9 @@ public double CurrentSpeed
         // 1000+ off-screen creatures from running their AI with no delay.
         //
         // The AI timer only recomputes its interval when something calls
-        // OnCurrentSpeedChanged() (normally just on state changes, e.g.
-        // idle->combat). Since this value now changes on its own with
-        // visibility, the TRANSITION has to be detected right here and the
-        // refresh fired immediately -- otherwise the timer picks up the new
-        // value only by coincidence, and stays stuck at 0.2.
+        // OnCurrentSpeedChanged(). Since this value now changes on its own
+        // with visibility, the TRANSITION has to be detected here and the
+        // refresh fired immediately -- otherwise the timer stays stuck at 0.2.
         bool watching = IsPlayerWatching(36);
         if (watching != m_LastWatchedByPlayer)
         {
@@ -167,46 +179,79 @@ public double CurrentSpeed
 }
 ```
 
-**Why:** LivingWorld keeps thousands of citizens alive simultaneously, almost all of
-them off-screen. Stock `CurrentSpeed` gives every one of them a zero AI delay. The
-transition detection is not optional polish — without it the value gets stuck at 0.2
-and on-screen NPCs feel sluggish.
+LivingWorld keeps thousands of citizens alive at once, nearly all off-screen. Stock
+`CurrentSpeed` gives every one of them a zero AI delay.
 
-### Also in this file: civilian clothing *(optional)*
+Same file, optional: `AddItem` / `DenyArmor` — 40% of bots spawn without armor and
+get civilian clothing on the same body layers instead of being naked. This is the
+override that needs B0.
 
-40% of bots spawn with no armor, and get basic civilian clothing on the same body
-layers instead of being naked. Cosmetic — see `AddItem` / `DenyArmor`.
+### B2. `Scripts/Mobiles/AI/BaseAI.cs` — navpoint following
 
-## B2. `Scripts/Mobiles/AI/BaseAI.cs` — navpoint following
-
-In the navpoint-following branch, plus a field:
-
-```csharp
-private int m_NavStuck; // consecutive ticks stuck following navpoints
-```
-
-The logic, in order:
+Add `private int m_NavStuck;`, then in the navpoint branch:
 
 1. **If an A\* route is already active for this same navpoint, keep following it**
    every tick instead of restarting. Restarting each call — the stock behavior —
-   wastes ticks re-failing the same step against the same obstacle between A\* calls.
-   This is what actually gets NPCs around buildings.
-2. Otherwise try a direct step.
-3. If that fails, try a cheap 45°/90° sidestep (offsets `1, -1, 2, -2`) — handles
+   burns ticks re-failing the same step against the same obstacle. This is what
+   actually gets NPCs around buildings.
+2. Otherwise, try a direct step.
+3. On failure, try a cheap 45°/90° sidestep (offsets `1, -1, 2, -2`) — handles
    crowds at no pathfinding cost.
-4. Only when **genuinely stuck for 3 consecutive ticks**, start a real A\* (`MoveTo`
-   creates the `PathFollower`), which step 1 then follows.
-5. If even A\* cannot start, give up on the point via `CheckNavPoint()`.
+4. Only after **3 consecutive stuck ticks**, start a real A\* (`MoveTo` creates the
+   `PathFollower`), which step 1 then follows.
+5. If even A\* cannot start, drop the point via `CheckNavPoint()`.
 
-**Why:** stock ServUO's navpoint handling assumes short, unobstructed hops. City
-patrols are neither. `CityLords` drives `NavPoints`/`CurrentNavPoint` directly and
-assumes this behavior; without it, Lords and their escorts snag on walls.
+`CityLords` drives `NavPoints`/`CurrentNavPoint` directly and assumes this. Without
+it, Lords and their escorts snag on walls.
+
+### B3. `Scripts/Services/Harvest/Mining.cs` and `Lumberjacking.cs` — harvest lock
+
+One line each:
+
+```csharp
+public override object GetLock(Mobile from, Item tool, HarvestDefinition def, object toHarvest) => this;
+```
+
+Changes harvest lock granularity. Matters precisely when many NPCs mine or chop
+simultaneously — which is `LWEconomy` running every miner and lumberjack in the world.
 
 ---
 
-## Verifying your own tree
+## Group C — shard policy, not LivingWorld
 
-If you are extracting LivingWorld from an existing shard, do **not** trust
-`grep -r LivingWorld` to find what to port — Group B does not mention LivingWorld at
-all. That mistake is why this document originally listed four files instead of six.
-Diff against the ServUO revision your tree actually forked from.
+Not required, but they shape the world LivingWorld was tuned for.
+
+| File | What |
+|---|---|
+| `Scripts/Misc/CharacterCreation.cs` | Redirects Trammel → Felucca; T2A Felucca-only shard |
+| `Spawns/trammel.xml` | ~7 spawners removed |
+| `Config/Accounts.cfg` | `AccountsPerIp` 1→10, `ProtectPasswords` → `NewSecureCrypt` |
+| `Config/Server.cfg`, `Config/DataPath.cfg` | Server identity and host paths — do not copy |
+
+---
+
+## The rest of the 36
+
+Modified in the origin tree but **not** LivingWorld coupling. Listed so nothing is
+hidden.
+
+**Upstream bugfixes carried along** — worth cherry-picking, easy to lose in a
+re-clone: `Bless.cs` (`AddBless(Caster→m)`), `Mannequin.cs` (`IsOwner(Owner→from)`),
+`Sphynx.cs` (`Deposit→Withdraw` — it was *giving* 5000gp instead of charging),
+`BaseWeapon.cs` (`/10 → /100` in a Throwing chance formula).
+
+**Support:** `Server/Utility.cs` gains `ColorExtensions` (`Darken`/`Lighten`), which
+`BarGraphRenderer.cs` uses. `Server/ScriptCompiler.cs` adds `-p:Platform=x64`.
+
+**Not attributed** — these look like upstream refactors from after 57.4 rather than
+local edits (auto-properties, methods becoming `static`), and I did not confirm
+either way: `Server/Main.cs`, `Server/Item.cs`, `Server/Network/{Listener,Packets,
+PacketHandlers,NetState,SendQueue}.cs`, `Scripts/Accounting/IPLimiter.cs`,
+`Scripts/Misc/ServerList.cs`, `Scripts/Commands/SignParser.cs`, `BaseGalleon.cs`,
+`Data/signs.cfg`. Four of them (`NetState.cs`, `SendQueue.cs`, `SignParser.cs`,
+`signs.cfg`) stop differing at tag 57.4.1, which is good evidence they are drift and
+not ours.
+
+**Absent from the origin tree:** `Data/Binary/Bounds.bin` is not committed. Not
+fatal — `Server/ItemBounds.cs` warns and continues — but a clean checkout boots
+without item bounds.
