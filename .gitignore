@@ -1,7 +1,7 @@
-# Estado de runtime do LivingWorld (gerado pelo servidor, nunca versionar)
+# LivingWorld runtime state (written by the server, never commit)
 livingworld_*.txt
 
-# Build do ServUO
+# ServUO build output
 *.dll
 *.exe
 *.pdb
