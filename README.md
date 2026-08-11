@@ -161,3 +161,18 @@ patches/                        — o patch de 2 linhas no PlayerMobile.cs
 `shard/` contém `OptusNPC.cs` (ponte HTTP para um bot externo em `127.0.0.1:5050`),
 `SpawnOptusCmd.cs` e `AutoFixPosition.cs` (hook temporário com nome de personagem
 hardcoded). Estão versionados por completude, mas não fazem parte do pacote.
+
+---
+
+## Licença
+
+[GPL-2.0](LICENSE) — a mesma do [ServUO](https://github.com/ServUO/ServUO), do qual
+este código é obra derivada: ele herda das classes do emulador (`BaseCreature`,
+`BaseAI`, `PlayerMobile`) e é compilado dentro do binário do servidor.
+
+Livre para todos, de propósito. Você pode usar, estudar, modificar e redistribuir.
+A única contrapartida é a recíproca: se distribuir uma versão modificada, ela também
+sai sob GPL-2.0, com o fonte junto. Ninguém pode fechar este mundo.
+
+Copyright © 2026 Lucas Cruz Ferreira. Licenciar não é ceder autoria — o LivingWorld
+continua sendo meu trabalho, e a licença é o que garante que ele siga sendo de todos.
