@@ -3,6 +3,8 @@ name: Jev
 # Checagens com o Jev (TypeSafe): juízos baratos sobre o PR (texto, diff, telas), decididos em
 # código em .jev/checks.mjs. Workflow separado de propósito: não entra no portão do ci-green, e
 # sem TYPESAFE_API_KEY as checagens que dependem do Jev só são puladas, com aviso.
+# Sem action de artefato: o runner do celular não consegue baixá-la. O relatório fica no resumo
+# do job e, no runner, em ~/.cache/jev-kit/reports/<repo>/.
 # Kit: lukscf/tank4, ops/jev-kit/GUIA.md.
 on:
   pull_request:
@@ -28,12 +30,3 @@ jobs:
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
         run: node .jev/jev.mjs run
-      # O relatório (respostas e probabilidades) fica 7 dias: é o que o agente lê, em vez dos prints.
-      - name: Relatório do Jev
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: jev-report
-          path: ${{ runner.temp }}/jev-report.json
-          if-no-files-found: ignore
-          retention-days: 7

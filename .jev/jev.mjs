@@ -348,6 +348,19 @@ export function report(results, ctx, { out } = {}) {
   console.log(`\nJev ${MODEL}: ${summary.passou} passou, ${summary.reprovou} reprovou, ${summary.aviso} aviso, ${summary.erro} erro, ${summary.pulou} pulou · ${tokens} tokens (~US$ ${summary.custo_usd_estimado}) · ${summary.cache} do cache`);
   const file = out || process.env.JEV_REPORT || path.join(process.env.RUNNER_TEMP || path.join(ctx.root, '.jev', 'out'), 'jev-report.json');
   try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(summary, null, 2)); console.log(`Relatório: ${file}`); } catch { /* opcional */ }
+  // No Actions, uma cópia fica em ~/.cache/jev-kit/reports/<repo>/<pr ou sha>.json: no runner do
+  // celular o HOME persiste e o agente lê dali, sem depender de artefato (o runner não consegue
+  // baixar a action upload-artifact). Relatórios com mais de 14 dias são apagados.
+  if (process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY) {
+    try {
+      const dir = path.join(CACHE_DIR, 'reports', process.env.GITHUB_REPOSITORY.replace(/[^\w.-]+/g, '_'));
+      fs.mkdirSync(dir, { recursive: true });
+      const id = ctx.event?.pull_request?.number ? `pr-${ctx.event.pull_request.number}` : (process.env.GITHUB_SHA || 'run').slice(0, 12);
+      fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(summary, null, 2));
+      for (const f of fs.readdirSync(dir)) { const fp = path.join(dir, f); if (Date.now() - fs.statSync(fp).mtimeMs > 14 * 864e5) fs.rmSync(fp, { recursive: true, force: true }); }
+      console.log(`Cópia no runner: ${path.join(dir, `${id}.json`)}`);
+    } catch { /* opcional */ }
+  }
   if (process.env.GITHUB_STEP_SUMMARY) {
     const rows = results.map((r) => `| ${ICON[r.status]} | \`${r.name}\` | ${(r.msg || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')} | ${fmtAnswers(r.answers)} |`);
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
