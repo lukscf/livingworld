@@ -7,7 +7,8 @@
 //
 // Por que existe: julgar print, texto ou diff com um LLM grande custa milhares de tokens e
 // minutos por pergunta. O Jev responde em ~1 s e custa centavos por milhão de tokens; então o
-// CI pode fazer essas perguntas em todo PR, e o agente lê o relatório em vez de abrir o print.
+// Jev pode fazer essas perguntas em todo PR (não há CI: quem roda é o bin/tank4-jev do tank4),
+// e o agente lê o veredito em vez de abrir o print.
 //
 // Uso:   node .jev/jev.mjs run [--all] [--only nome] [--dry] [--base SHA --head SHA]
 //        node .jev/jev.mjs list            lista as checagens que rodariam
@@ -27,7 +28,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.0.1';
 export const MODEL = process.env.JEV_MODEL || 'jev-1.14.0'; // fixo: limiares calibrados nele
 export const URL = process.env.JEV_URL || 'https://api.typesafe.ai/v1/systemone';
 export const YES = 0.7, NO = 0.3; // acima de YES é sim, abaixo de NO é não, no meio não decidiu
@@ -559,7 +560,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (o.cmd === 'list') { for (const c of checks) console.log(`${c.name}${c.files ? '  (' + [].concat(c.files).join(', ') + ')' : ''}`); console.log(`${checks.length} checagem(ns)`); return 0; }
   if (o.cmd !== 'run') { console.error(`comando desconhecido: ${o.cmd} (use run, list ou version)`); return 2; }
   const key = apiKey();
-  if (!key && !o.dry) console.log('::warning title=Jev::sem TYPESAFE_API_KEY: checagens fora do cache serão puladas. No tank4: /data/data/com.termux/files/home/tank4/bin/jev-kit secrets lukscf/<repo>');
+  if (!key && !o.dry) console.log('::warning title=Jev::sem TYPESAFE_API_KEY: checagens fora do cache serão puladas. No tank4 a chave fica no ~/desktop-agent/.env e o tank4-jev a entrega; local, use jev-kit probe.');
   if (!checks.length) { console.log('Jev: nenhuma checagem se aplica a esta mudança.'); report([], ctx, o); return 0; }
   const results = await runChecks(ctx, checks, { dry: o.dry, key });
   const s = report(results, ctx, o);
