@@ -28,7 +28,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.1.0';
 export const MODEL = process.env.JEV_MODEL || 'jev-1.14.0'; // fixo: limiares calibrados nele
 export const URL = process.env.JEV_URL || 'https://api.typesafe.ai/v1/systemone';
 export const YES = 0.7, NO = 0.3; // acima de YES é sim, abaixo de NO é não, no meio não decidiu
@@ -248,6 +248,14 @@ function cachePut(k, v) {
 }
 
 // ── execução ─────────────────────────────────────────────────────────────────
+// Progresso ao vivo (JEV_PROGRESS=1): uma linha `::jev-progress::{json}` por mudança de
+// estado de cada checagem (fila, run, depois o status final). O tank4-jev e o jev-auto
+// leem essas linhas e mostram no chat da Crew o que o Jev está testando enquanto roda.
+export function progress(name, estado, msg = '') {
+  if (process.env.JEV_PROGRESS !== '1') return;
+  console.log(`::jev-progress::${JSON.stringify({ name, estado, msg: String(msg || '').replace(/\r?\n/g, ' ').slice(0, 200) })}`);
+}
+
 async function pool(items, n, fn) {
   const out = new Array(items.length);
   let i = 0;
@@ -294,7 +302,16 @@ export async function runChecks(ctx, checks, { dry = false, key = apiKey() } = {
     console.log(`::warning title=Jev::${checks.length} checagens; rodando só as ${MAX_CHECKS} primeiras (JEV_MAX_CHECKS).`);
     checks = checks.slice(0, MAX_CHECKS);
   }
+  for (const c of checks) progress(c.name, 'fila');
   const results = await pool(checks, CONCURRENCY, async (c) => {
+    progress(c.name, 'run');
+    const r = await runOne(c);
+    progress(c.name, r.status, r.msg);
+    return r;
+  });
+  return results;
+
+  async function runOne(c) {
     const r = { name: c.name, status: 'erro', msg: '', answers: null, cached: false, tokens: 0 };
     let req;
     try {
@@ -319,8 +336,7 @@ export async function runChecks(ctx, checks, { dry = false, key = apiKey() } = {
     r.tokens = r.cached ? 0 : (got.usage?.input_tokens || 0);
     try { Object.assign(r, normalize(c.decide(got.answers, ctx))); } catch (e) { r.status = 'erro'; r.msg = `decide: ${e.message}`; }
     return r;
-  });
-  return results;
+  }
 }
 
 const ICON = { passou: '✅', reprovou: '❌', aviso: '⚠️', erro: '💥', pulou: '⏭️', seco: '📝' };
